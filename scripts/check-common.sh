@@ -4,7 +4,7 @@
 # common/ is compiled into two very different projects, and a mistake there does not show up until
 # someone runs a full Forge build of the *other* version. This compiles the shared sources twice --
 # once as 1.12.2 sees them, once as 1.20.1 -- with only the dependencies each version actually
-# provides. That mechanically enforces every rule in common/README.md:
+# provides. That mechanically enforces every rule in CONTRIBUTING.md:
 #
 #   * no Minecraft types      -- no Minecraft on the classpath, so any reference fails
 #   * Java 8 API only         -- --release 8 rejects anything newer (1.12.2 builds via Jabel)
@@ -79,7 +79,7 @@ check() { # label, release, gson jar
             "$stub/com/mojang/authlib/GameProfile.java" $sources; then
         echo "    OK"
     else
-        echo "    FAILED -- see common/README.md for what common/ may depend on" >&2
+        echo "    FAILED -- see CONTRIBUTING.md for what common/ may depend on" >&2
         status=1
     fi
 }

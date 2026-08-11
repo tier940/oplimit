@@ -15,7 +15,7 @@ java {
     toolchain { languageVersion = JavaLanguageVersion.of(8) }
 }
 
-// Code shared verbatim with the 1.20.1 build. See ../common/README.md.
+// Code shared verbatim with the 1.20.1 build. See CONTRIBUTING.md.
 sourceSets.main.java.srcDir '../common/src/main/java'
 // Lang files live with the shared code so the two builds cannot drift apart. 1.12.2 clients read
 // the key=value .lang format (JSON arrived in 1.13), so they are converted rather than copied.

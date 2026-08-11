@@ -14,7 +14,7 @@ java {
     toolchain { languageVersion = JavaLanguageVersion.of(17) }
 }
 
-// Code shared verbatim with the 1.12.2 build. See ../common/README.md.
+// Code shared verbatim with the 1.12.2 build. See CONTRIBUTING.md.
 sourceSets.main.java.srcDir '../common/src/main/java'
 // Lang files live with the shared code so the two builds cannot drift apart.
 sourceSets.main.resources.srcDir '../common/src/main/resources'

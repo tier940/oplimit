@@ -1,48 +1,48 @@
-# バージョンを追加する
+# Adding a Minecraft version
 
-`1.20.1/` を雛形にコピーするのが一番早いです。**modern Forge(1.16.5 以降)向け**の手順で、1.12.2 はビルドもローダー API も別物なので当てはまりません(既存の `1.12.2/` を参照)。
+Copying `1.20.1/` is the quickest start. These steps target modern Forge (1.16.5 and later); 1.12.2 differs in both its build and its loader API, so use the existing `1.12.2/` as the reference for anything of that era.
 
 ```bash
 cp -r 1.20.1 1.21.1
 ```
 
-コピーされるのは `build.gradle` と `src/` だけです(wrapper・`settings.gradle`・`gradle.properties` はリポジトリ直下にあり、サブプロジェクトは持ちません)。ルートの `settings.gradle` の `include` に追加して初めてビルド対象になります。
+Only `build.gradle` and `src/` come along: the wrapper, `settings.gradle` and `gradle.properties` live at the repository root and subprojects do not carry their own. Add the directory to `include` in the root `settings.gradle` to bring it into the build.
 
-## 差し替える値
+## Values to change
 
-**mod のバージョンや名前は書き換えません。** ルートの `gradle.properties`(`modId` / `modName` / `modVersion` / `modAuthor`)が唯一の出所で、`mods.toml` へは `processResources` で展開されます。差し替えるのは Minecraft と Forge に紐づく値だけです。
+The mod's name and version are not among them. `modId`, `modName`, `modVersion` and `modAuthor` in the root `gradle.properties` are the only source, expanded into `mods.toml` by `processResources`. What changes is everything tied to Minecraft and Forge.
 
-| ファイル | 箇所 | 1.20.1 での値 |
+| File | Setting | Value for 1.20.1 |
 |---|---|---|
 | `build.gradle` | `mappings channel: 'official', version:` | `1.20.1` |
 | | `minecraft 'net.minecraftforge:forge:'` | `1.20.1-47.4.10` |
-| | `JavaLanguageVersion.of()` | `17`(1.20.5+ は 21) |
-| `src/main/resources/META-INF/mods.toml` | `loaderVersion` / forge の `versionRange` | `[47,)` |
-| | minecraft の `versionRange` | `[1.20.1,1.20.2)` |
+| | `JavaLanguageVersion.of()` | `17` (21 from 1.20.5) |
+| `src/main/resources/META-INF/mods.toml` | `loaderVersion`, forge's `versionRange` | `[47,)` |
+| | minecraft's `versionRange` | `[1.20.1,1.20.2)` |
 | `src/main/resources/oplimitbypass.mixins.json` | `compatibilityLevel` | `JAVA_17` |
 | `src/main/resources/pack.mcmeta` | `pack_format` | `15` |
 
-## コードで確認する箇所
+## Code to review
 
-`common/` は触りません。バージョン固有なのは 4 ファイルだけです。
+`common/` needs no changes. Four files are version-specific:
 
-- `server/OpBypassCounter.java` — `PROFILE_READER`(プレイヤーから `GameProfile` を取る)、
-  `reloadVanillaOps`(`getOps().load()`)、`setMaxPlayers`
-- `mixins/minecraft/MixinPlayerListLimit.java` — **`@Redirect` / `@Inject` のターゲットが最重要**。
-  `canPlayerLogin` と `getPlayerCount` は名前も引数もバージョンによって変わります。
-- `mixins/minecraft/AccessorPlayerList.java` — `maxPlayers` フィールド名
-- `OpLimitBypassMod.java`、`server/OpLimitCommand.java` — Brigadier の API 差分
+- `server/OpBypassCounter.java` — `PROFILE_READER` (how a player yields its `GameProfile`), `reloadVanillaOps`, `setMaxPlayers`
+- `mixins/minecraft/MixinPlayerListLimit.java` — **the `@Redirect` and `@Inject` targets matter most.** `canPlayerLogin` and `getPlayerCount` change name and signature between versions
+- `mixins/minecraft/AccessorPlayerList.java` — the `maxPlayers` field name
+- `OpLimitBypassMod.java` and `server/OpLimitCommand.java` — Brigadier API differences
 
-`@Redirect` は当たらないと起動時に失敗する設定なので、ターゲットのズレは黙って無視されず表面化します。
+A `@Redirect` that misses fails the game at startup, so a target that has moved surfaces immediately rather than being ignored.
 
-## refmap に注意
+Check also how the version reports its player count and MOTD for the server list. Both have moved between versions, and the two current builds need different hooks for the same result; see [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
-mixin config が宣言する refmap が生成されないと、**ビルドは成功したまま mixin だけが効かない** jar ができます。`build.gradle` の `compileJava` にこれを検出するチェックを入れてあるので、コピー時に落とさないでください。annotation processor(`org.spongepowered:mixin:<version>:processor`)が依存に要ります。Forge は実行時の Mixin は同梱しますが、プロセッサは供給しません。
+## refmap
 
-## 仕上げ
+If the refmap declared by the mixin config is never generated, the build still succeeds and only the mixins stop working. `build.gradle` carries a check for this, so keep it when copying. The annotation processor (`org.spongepowered:mixin:<version>:processor`) has to be on the dependency list: Forge ships Mixin at runtime but not the processor.
 
-1. ルート `settings.gradle` の `include` に `'1.21.1'` を足す(これだけでビルド対象になります)
-2. ルート `README.md` のツリーに 1 行足す
-3. `.github/workflows/release.yml` の `Collect jars` と refmap 検証のループに版を足す
+## Finishing up
 
-CI のビルドは `./gradlew build` を叩くだけなので、追加の設定は要りません。ただし 1.20.5 以降は JDK 21 が必要で、CI は 17 を入れています。その場合は `.github/workflows/build.yml` と `release.yml` の `java-version` を上げてください(RetroFuturaGradle も将来 21 以上を要求する予定なので、いずれ揃います)。
+1. Add `'1.21.1'` to `include` in the root `settings.gradle`; that alone brings it into the build
+2. Add a line to the layout in [`CONTRIBUTING.md`](../CONTRIBUTING.md)
+3. Add the version to the `Collect jars` and refmap verification loops in `.github/workflows/release.yml`
+
+CI builds with `./gradlew build` and needs no further setup. From 1.20.5 onwards JDK 21 is required, while CI installs 17; raise `java-version` in `.github/workflows/build.yml` and `release.yml` when that time comes. RetroFuturaGradle will eventually require 21 or newer as well, so the two will converge.
