@@ -51,7 +51,7 @@ mixin config が宣言する refmap が生成されないと、**ビルドは成
 
 1. ルート `settings.gradle` の `include` に `'1.21.1'` を足す（これだけでビルド対象になります）
 2. ルート `README.md` のツリーに 1 行足す
-3. `.github/workflows/release.yml` の `collect jars` ステップのループに版を足す
+3. `.github/workflows/release.yml` の `Collect jars` と refmap 検証のループに版を足す
 
 CI のビルドは `./gradlew build` を叩くだけなので、追加の設定は要りません。
 ただし 1.20.5 以降は JDK 21 が必要で、CI は 17 を入れています。その場合は

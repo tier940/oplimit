@@ -99,7 +99,9 @@ mod の識別情報(id / 名前 / バージョン / 作者)は**ルートの `gr
 RetroFuturaGradle が生成します。`modVersion` を 1 行変えれば jar 名まで全部追従します。
 
 CI は 2 つです。`build` がルートから `./gradlew build` で両方を建て `check_common` が `common/` の制約を検査します([common/README.md](common/README.md) 参照)。
-リリースは `v*` タグの push で `release` が走り、タグと `modVersion` が食い違えば失敗します。
+リリースは GitHub の Actions タブから `Publish Project` を実行します。バージョンを入力すると
+`gradle.properties` の `modVersion` 書き換え・コミット・タグ付け・ビルド・リリース作成まで走るので、
+手元でタグを打つ必要はありません。
 
 フォーマットは [.editorconfig](.editorconfig) に委ねています(spotless などの検査は入れていません)。
 
