@@ -1,0 +1,28 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="All Rights Reserved"
+issueTrackerURL=""
+
+[[mods]]
+modId="${modId}"
+version="${modVersion}"
+displayName="${modName}"
+authors="${modAuthor}"
+description='''
+Operators flagged with bypassesPlayerLimit in ops.json no longer consume a max-players slot.
+Adds /oplimit to toggle the flag, reload ops.json and change max-players without restarting.
+'''
+
+[[dependencies.${modId}]]
+    modId="forge"
+    mandatory=true
+    versionRange="[47,)"
+    ordering="NONE"
+    side="SERVER"
+
+[[dependencies.${modId}]]
+    modId="minecraft"
+    mandatory=true
+    versionRange="[1.20.1,1.20.2)"
+    ordering="NONE"
+    side="SERVER"

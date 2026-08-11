@@ -1,0 +1,13 @@
+[{
+	"modid": "${modid}",
+	"name": "${modname}",
+	"version": "${version}",
+	"mcversion": "${mcversion}",
+	"description": "Operators with bypassesPlayerLimit no longer consume a max-players slot. Adds /oplimit to toggle the flag, reload ops.json and change max-players without restarting.",
+	"authorList": ["tier940"],
+	"credits": "",
+	"url": "",
+	"updateJSON": "",
+	"logoFile": "",
+	"requiredMods": ["mixinbooter"]
+}]

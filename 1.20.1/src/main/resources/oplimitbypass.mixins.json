@@ -1,0 +1,15 @@
+{
+  "required": true,
+  "minVersion": "0.8.5",
+  "package": "com.github.tier940.oplimitbypass.mixins.minecraft",
+  "compatibilityLevel": "JAVA_17",
+  "refmap": "oplimitbypass.refmap.json",
+  "mixins": [
+    "AccessorPlayerList",
+    "MixinPlayerListLimit"
+  ],
+  "client": [],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

@@ -12,11 +12,14 @@
     {
       "matchDatasources": ["gradle-version"],
       "registryUrls": [
+        "https://repo1.maven.org/maven2",
+        "https://maven.minecraftforge.net",
+        "https://repo.spongepowered.org/repository/maven-public",
+        "https://maven.cleanroommc.com",
+        "https://nexus.gtnewhorizons.com/repository/public/",
         "https://www.cursemaven.com",
         "https://api.modrinth.com/maven",
-        "https://maven.cleanroommc.com",
         "https://maven.blamejared.com",
-        "https://nexus.gtnewhorizons.com/repository/public/",
         "https://maven.gtceu.com"
       ]
     },

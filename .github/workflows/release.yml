@@ -1,0 +1,97 @@
+# Publishes a GitHub release with both version jars attached.
+#
+# Triggered by pushing a tag (v1.0.0), or manually via workflow_dispatch for a dry run that only
+# builds and uploads the jars as artifacts without creating a release.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v1.0.0). Leave empty to build only.'
+        required: false
+        type: string
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and release
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Build
+        run: ./gradlew --stacktrace build
+
+      # Both projects produce oplimitbypass-<version>.jar, so the Minecraft version has to go into
+      # the released filename. The -dev jar is deobfuscated and deliberately not published.
+      - name: Collect jars
+        id: collect
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          version=$(sed -n 's/^modVersion *= *//p' gradle.properties | tr -d '[:space:]')
+          test -n "$version"
+
+          # A v1.0.1 tag shipping 1.0.0 jars is the failure mode a single version source invites.
+          if [ "${GITHUB_REF_TYPE:-}" = tag ] && [ "v${version}" != "$REF_NAME" ]; then
+              echo "Tag ${REF_NAME} does not match modVersion ${version} in gradle.properties." >&2
+              exit 1
+          fi
+
+          for mc in 1.12.2 1.20.1; do
+              src="${mc}/build/libs/oplimitbypass-${version}.jar"
+              test -f "$src"
+              cp "$src" "release/oplimitbypass-${mc}-${version}.jar"
+          done
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          ls -l release
+
+      # The build already fails without a refmap; this re-checks the actual released files, since a
+      # jar whose mixins never apply is the one defect that looks completely healthy.
+      - name: Verify both jars carry their refmap
+        env:
+          VERSION: ${{ steps.collect.outputs.version }}
+        run: |
+          set -euo pipefail
+          unzip -p "release/oplimitbypass-1.12.2-${VERSION}.jar" mixins.oplimitbypass.refmap.json | grep -q func_
+          unzip -p "release/oplimitbypass-1.20.1-${VERSION}.jar" oplimitbypass.refmap.json | grep -q m_
+          echo "refmap OK for both"
+
+      - name: Upload jars as workflow artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: oplimitbypass-${{ steps.collect.outputs.version }}
+          path: release/*.jar
+          retention-days: 90
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" release/*.jar \
+              --title "$TAG" \
+              --generate-notes

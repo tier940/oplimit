@@ -1,0 +1,105 @@
+plugins {
+    id 'java'
+    id 'eclipse'
+    id 'net.minecraftforge.gradle' version '[6.0.16,6.2)'
+    id 'org.spongepowered.mixin' version '0.7.+'
+}
+
+// Identity comes from the root gradle.properties so no version string is written by hand.
+group = 'com.github.tier940.oplimitbypass'
+version = modVersion
+base { archivesName = modId }
+
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(17) }
+}
+
+// Code shared verbatim with the 1.12.2 build. See ../common/README.md.
+sourceSets.main.java.srcDir '../common/src/main/java'
+
+minecraft {
+    mappings channel: 'official', version: '1.20.1'
+
+    runs {
+        server {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', "${projectDir}/build/createSrgToMcp/output.srg"
+            mods { oplimitbypass { source sourceSets.main } }
+        }
+    }
+}
+
+mixin {
+    add sourceSets.main, 'oplimitbypass.refmap.json'
+    config 'oplimitbypass.mixins.json'
+}
+
+// mods.toml carries ${...} placeholders so the version lives only in gradle.properties.
+processResources {
+    inputs.property 'identity', "${modId}:${modName}:${version}:${modAuthor}"
+    filesMatching('META-INF/mods.toml') {
+        expand(
+                'modId': modId,
+                'modName': modName,
+                'modVersion': version,
+                'modAuthor': modAuthor,
+        )
+    }
+}
+
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    minecraft 'net.minecraftforge:forge:1.20.1-47.4.22'
+
+    // Forge ships Mixin at runtime but not its annotation processor, and MixinGradle does not add
+    // one either. Without it no refmap is generated, even though oplimitbypass.mixins.json declares
+    // one. 1.20.1 uses official mappings so the names happen to line up in production, but the
+    // dev-time SRG environment still needs the mapping.
+    annotationProcessor 'org.spongepowered:mixin:0.8.7:processor'
+
+    // Forge pulls this in transitively, but common/ is annotated with it and both builds have to
+    // agree on the version, so declare it explicitly rather than inheriting whatever Forge ships.
+    compileOnly 'org.jetbrains:annotations:26.1.0'
+}
+
+jar {
+    manifest {
+        attributes([
+                'Specification-Title'   : 'OpLimitBypass',
+                'Specification-Vendor'  : 'tier940',
+                'Specification-Version' : '1',
+                'Implementation-Title'  : 'OpLimitBypass',
+                'Implementation-Version': project.version,
+                'Implementation-Vendor' : 'tier940',
+                'MixinConfigs'          : 'oplimitbypass.mixins.json'
+        ])
+    }
+}
+
+tasks.named('jar').configure { finalizedBy('reobfJar') }
+
+// oplimitbypass.mixins.json declares a refmap, so one has to exist. A missing refmap builds cleanly
+// and only shows up as mixins that never apply, so check it here rather than in production.
+// MixinGradle copies the processor's output into the jar, so verify that output directly.
+tasks.named('compileJava').configure {
+    // The annotation processor writes the refmap to build/tmp, which Gradle does not track as a
+    // task output. A cache hit therefore restores the classes but not the refmap, and the jar ends
+    // up without it. Opting out of the cache keeps the two in step.
+    outputs.cacheIf { false }
+
+    doLast {
+        def refMap = layout.buildDirectory.file('tmp/compileJava/compileJava-refmap.json').get().asFile
+        if (!refMap.isFile() || !refMap.text.contains('m_')) {
+            throw new GradleException("No usable refmap at ${refMap}.\n" +
+                    'The mixin annotation processor did not run, or resolved no SRG names. ' +
+                    'Check the annotationProcessor dependencies.')
+        }
+    }
+}

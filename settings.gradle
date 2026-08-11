@@ -1,41 +1,26 @@
 pluginManagement {
     repositories {
+        gradlePluginPortal()
         maven {
-            // RetroFuturaGradle
+            // RetroFuturaGradle (1.12.2)
             name = 'GTNH Maven'
             url = 'https://nexus.gtnewhorizons.com/repository/public/'
-            //noinspection GroovyAssignabilityCheck
             mavenContent {
                 includeGroup 'com.gtnewhorizons'
                 includeGroup 'com.gtnewhorizons.retrofuturagradle'
             }
         }
-        gradlePluginPortal()
+        // ForgeGradle (1.20.1)
+        maven { url = 'https://maven.minecraftforge.net/' }
+        maven { url = 'https://repo.spongepowered.org/repository/maven-public/' }
         mavenCentral()
-        mavenLocal()
     }
 }
 
 plugins {
-    id 'com.diffplug.blowdryerSetup' version '1.7.1'
-    // Automatic toolchain provisioning
     id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
-    id 'com.gradle.develocity' version '3.19'
 }
 
-develocity {
-    buildScan {
-        termsOfUseUrl = "https://gradle.com/help/legal-terms-of-use"
-        termsOfUseAgree = "yes"
-        // Only publish a build scan in CI; locally the terms are still accepted
-        // so the daemon never blocks on the interactive "Do you accept?" prompt.
-        publishing.onlyIf { System.getenv("CI") != null }
-    }
-}
+rootProject.name = 'oplimitbypass'
 
-blowdryerSetup {
-    repoSubfolder 'spotless'
-    github 'GTModpackTeam/Buildscripts', 'tag', 'v1.0.4'
-}
-
-rootProject.name = rootProject.projectDir.getName()
+include '1.12.2', '1.20.1'

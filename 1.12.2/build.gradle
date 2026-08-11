@@ -1,0 +1,131 @@
+plugins {
+    id 'java'
+    id 'eclipse'
+    id 'com.gtnewhorizons.retrofuturagradle' version '1.4.9'
+}
+
+// Identity comes from the root gradle.properties so no version string is written by hand.
+group = 'com.github.tier940.oplimitbypass'
+version = modVersion
+base { archivesName = modId }
+
+// The mod ships as Java 8 bytecode, which is all 1.12.2 can load. RetroFuturaGradle runs the
+// Gradle daemon on a modern JDK and provisions the Java 8 toolchain itself.
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(8) }
+}
+
+// Code shared verbatim with the 1.20.1 build. See ../common/README.md.
+sourceSets.main.java.srcDir '../common/src/main/java'
+
+ext.mcVersion = '1.12.2'
+
+minecraft {
+    mcVersion = project.ext.mcVersion
+    // Vanilla's own username check rejects the default, and this is a server-only mod anyway.
+    username = 'Developer'
+    // Generates the Tags class with these as constants. @Mod needs compile time constants for
+    // modid/name/version, and this keeps them tied to gradle.properties.
+    injectedTags.put('MODID', modId)
+    injectedTags.put('MODNAME', modName)
+    injectedTags.put('VERSION', project.version)
+}
+
+tasks.named('injectTags').configure {
+    outputClassName = "${project.group}.Tags"
+}
+
+// mcmod.info carries ${...} placeholders. Without this expansion the jar ships them literally and
+// Forge shows "${modname}" in the mod list.
+processResources {
+    inputs.property 'identity', "${modId}:${modName}:${version}:${project.ext.mcVersion}"
+    filesMatching('mcmod.info') {
+        expand(
+                'modid': modId,
+                'modname': modName,
+                'version': version,
+                'mcversion': project.ext.mcVersion,
+        )
+    }
+}
+
+repositories {
+    maven {
+        name = 'GTNH Maven'
+        url = 'https://nexus.gtnewhorizons.com/repository/public/'
+    }
+    maven {
+        // MixinBooter
+        name = 'CleanroomMC'
+        url = 'https://maven.cleanroommc.com/'
+    }
+    mavenCentral()
+}
+
+configurations {
+    // MixinBooter is a runtime coremod; it must not leak into the published pom as a hard dep.
+    annotationProcessor.extendsFrom(compileOnly)
+}
+
+dependencies {
+    // The mixin annotation processor generates the refmap that maps our MCP-named targets
+    // (allowUserToConnect, getCurrentPlayerCount, maxPlayers) onto SRG names at runtime.
+    // Without it the mixins would silently fail to apply against an obfuscated server.
+    annotationProcessor 'org.ow2.asm:asm-debug-all:5.2'
+    annotationProcessor 'com.google.guava:guava:33.6.0-jre'
+    annotationProcessor 'com.google.code.gson:gson:2.14.0'
+
+    api('zone.rong:mixinbooter:11.13') { transitive = false }
+    // MixinBooter 11 keeps the mixin obfuscation processor in cleanmix. Without it on the annotation
+    // processor path javac silently runs no processor at all, no refmap is written, and the mixins
+    // fail to apply against an obfuscated server.
+    annotationProcessor('com.cleanroommc:cleanmix:0.7.1') { transitive = false }
+
+    compileOnlyApi 'org.jetbrains:annotations:26.1.0'
+    annotationProcessor 'org.jetbrains:annotations:26.1.0'
+
+    patchedMinecraft('net.minecraft:launchwrapper:1.12') { transitive = false }
+}
+
+// The refmap maps our MCP-named mixin targets onto the SRG names an obfuscated server actually has.
+// mixins.oplimitbypass.minecraft.json names this file, so it has to be inside the jar.
+//
+// The annotation processor writes it into the compileJava output directory rather than somewhere in
+// build/: that makes it a normal class-output file, so it lands in the jar and is tracked as task
+// output, instead of a side-effect file the jar task might snapshot before it exists.
+ext.refMapName = 'mixins.oplimitbypass.refmap.json'
+
+tasks.named('compileJava', JavaCompile).configure {
+    options.compilerArgs += [
+            "-AreobfSrgFile=${tasks.named('reobfJar').get().srg.get().asFile}",
+            "-AoutRefMapFile=${destinationDirectory.file(refMapName).get().asFile}",
+    ]
+
+    // A missing refmap is the one failure mode that builds cleanly and then breaks on an obfuscated
+    // server: the mixins simply never apply. Fail loudly instead of shipping an inert jar.
+    doLast {
+        def file = destinationDirectory.file(refMapName).get().asFile
+        if (!file.isFile() || !file.text.contains('func_')) {
+            throw new GradleException("No usable refmap at ${file}.\n" +
+                    'The mixin annotation processor did not run, or resolved no SRG names. ' +
+                    'Check the annotationProcessor dependencies.')
+        }
+    }
+}
+
+jar {
+    manifest {
+        attributes([
+                'FMLCorePlugin'                 : 'com.github.tier940.oplimitbypass.core.OpLimitCoreMod',
+                // The jar also holds an @Mod class, so FML must scan it as a regular mod too.
+                'FMLCorePluginContainsFMLMod'   : true,
+                'ForceLoadAsMod'                : true,
+                'Specification-Title'           : 'OpLimitBypass',
+                'Specification-Vendor'          : 'tier940',
+                'Specification-Version'         : '1',
+                'Implementation-Title'          : 'OpLimitBypass',
+                'Implementation-Version'        : project.version,
+                'Implementation-Vendor'         : 'tier940',
+        ])
+    }
+}
