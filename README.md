@@ -101,9 +101,12 @@ RetroFuturaGradle が生成します。`modVersion` を 1 行変えれば jar �
 CI は 2 つです。`build` がルートから `./gradlew build` で両方を建て `check_common` が `common/` の制約を検査します([common/README.md](common/README.md) 参照)。
 リリースは GitHub の Actions タブから `Publish Project` を実行します。バージョン(`X.Y.Z`)を入力すると
 `gradle.properties` の `modVersion` 書き換え・コミット・タグ付け・ビルド・リリース作成まで走るので、
-手元でタグを打つ必要はありません。タグと `modVersion` は常に `X.Y.Z` で、`release_type`
-(beta / alpha / release)は添付 jar の名前(`oplimitbypass-1.12.2-1.0.0-beta.jar`)と
-pre-release 表示にのみ効きます。
+手元でタグを打つ必要はありません。
+
+**git タグだけが `vX.Y.Z`** で、`modVersion` には `release_type` が付きます。つまり
+version=`1.0.0` / release_type=`beta` なら、タグは `v1.0.0`、`modVersion` は `1.0.0-beta` となり、
+jar 名・`mcmod.info`・`mods.toml` の version もすべて `1.0.0-beta` になります。
+`release` 以外は GitHub 上で pre-release として公開されます。
 
 フォーマットは [.editorconfig](.editorconfig) に委ねています(spotless などの検査は入れていません)。
 
