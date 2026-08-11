@@ -12,14 +12,13 @@ scripts/          check-common.sh: common/ の制約を機械的に検査
 docs/             adding-a-version.md: バージョン追加手順
 ```
 
-**単一の Gradle マルチプロジェクトビルドです。** ローダーもマッピングも全く違う 2 つですが、どちらも Gradle 8.14.5 / JDK 17 で動くので 1 つのビルドに同居できます。
-ops.json の読み書きなど MC に依存しないロジックは `common/` に集約していて、**両方から必要とされます**。制約は [common/README.md](common/README.md) を参照。
+**単一の Gradle マルチプロジェクトビルドです。** ローダーもマッピングも全く違う 2 つですが、どちらも Gradle 8.14.5 / JDK 17 で動くので 1 つのビルドに同居できます。ops.json の読み書きなど MC に依存しないロジックは `common/` に集約していて、**両方から必要とされます**。制約は [common/README.md](common/README.md) を参照。
 
 ---
 
 ## 1. 何をするか
 
-バニラの `bypassesPlayerLimit=true` は「満員でも入れる」だけで、**入った後は枠を 1 つ消費します**。max-players=20 で bypass op が 3 人いると、一般プレイヤーは 17 人しか入れません。このフラグは 1.8 で追加されたものなので、1.7.10 には対応していません。
+バニラの `bypassesPlayerLimit=true` は「満員でも入れる」だけで、**入った後は枠を 1 つ消費します**。max-players=20 で bypass op が 3 人いると、一般プレイヤーは 17 人しか入れません。
 
 この mod はログイン判定内の `players.size()` を `@Redirect` で差し替えます。
 
@@ -39,8 +38,7 @@ return オンラインのうち bypass op でない人数;                      
 
 表示人数も同じ数え方に揃えてあるので、上の例は `23/20` ではなく `20/20` と表示されます。サーバーリストの ping、query プロトコル、専用サーバの GUI、1.12.2 の `/list` が影響を受けます。
 
-1.20.1 では ping 用の人数が `PlayerList#getPlayerCount()` を経由せず
-`MinecraftServer#buildPlayerStatus` 内で直接数えられるため、そちらにも mixin を当てています。
+1.20.1 では ping 用の人数が `PlayerList#getPlayerCount()` を経由せず、`MinecraftServer#buildPlayerStatus` 内で直接数えられるため、そちらにも mixin を当てています。
 
 副作用が 2 点あります。
 
@@ -48,7 +46,7 @@ return オンラインのうち bypass op でない人数;                      
   「人数が 0 ならサーバを休止する」タイプの mod と併用する場合は影響が出ます。
 - 1.12.2 の `/list` は人数だけこの値を使い、名前は全員分を出すので、表示と名前の数が食い違います。
 
-真の接続人数は `/oplimit status` がいつでも出します(`online` が実数 `counted` が枠を消費する人数)。
+真の接続人数は `/oplimit status` がいつでも出します(`online` が実数、`counted` が枠を消費する人数)。
 
 ---
 
@@ -72,9 +70,9 @@ return オンラインのうち bypass op でない人数;                      
 
 ### メンテナンスモード
 
-`maintenance on` で max-players を 0 にし、**許可対象外のオンラインプレイヤーを切断**します。許可されるのは `bypassesPlayerLimit=true` の op と、`maintenance add` で登録した名前です。ON の間はサーバーリストの表示が `0/0` になり(許可されて入っている人も枠を消費しない扱いのため)、MOTD も「メンテナンス中」に差し替わります。元の MOTD は退避され、`off` で戻ります。
+`maintenance on` で max-players を 0 にし、**許可対象外のオンラインプレイヤーを切断**します。許可されるのは `bypassesPlayerLimit=true` の op と、`maintenance add` で登録した名前です。ON の間はサーバーリストの表示が `0/0` になり(許可されて入っている人も枠を消費しない扱いのため)、MOTD も「メンテナンス中」に差し替わります。
 
-`off` で元の max-players に戻ります。**モードの ON/OFF はメモリ上だけ**なので、メンテナンス中にサーバを再起動するとモードは解除され、max-players は `server.properties` の値に戻ります。
+`off` で元の max-players と MOTD に戻ります。**モードの ON/OFF はメモリ上だけ**なので、メンテナンス中にサーバを再起動するとモードは解除され、max-players は `server.properties` の値に戻ります。
 
 許可プレイヤーのリストは ops.json と同じ場所の **`oplimit-maintenance.json`** に保存され、再起動しても残ります。ファイルが無ければ起動時に `[]` で生成します。形式は ops.json と同じです。UUID はサーバのプロフィールキャッシュから引くので、一度でもこのサーバに接続したことのあるプレイヤーなら記録されます。全く未知のプレイヤーを登録した場合は name のみになり、そのプレイヤーが初めてログインした時点で UUID が補完されます。
 
@@ -101,7 +99,7 @@ return オンラインのうち bypass op でない人数;                      
 -Doplimit.lang=ja_jp
 ```
 
-未指定または未対応の言語コードのときは `en_us` になります。対応言語は `en_us` と `ja_jp` です。翻訳の原本は [common/src/main/resources/assets/oplimitbypass/lang/](common/src/main/resources/assets/oplimitbypass/lang/)の JSON で、1.12.2 向けの `.lang` はビルド時に生成されます(1.12.2 のクライアントは JSON を読めないため)。
+未指定または未対応の言語コードのときは `en_us` になります。対応言語は `en_us` と `ja_jp` です。翻訳の原本は [common/src/main/resources/assets/oplimitbypass/lang/](common/src/main/resources/assets/oplimitbypass/lang/) の JSON で、1.12.2 向けの `.lang` はビルド時に生成されます(1.12.2 のクライアントは JSON を読めないため)。
 
 ### 反映の仕組み
 
@@ -122,16 +120,13 @@ return オンラインのうち bypass op でない人数;                      
 
 **JDK 17 が 1 つあれば建ちます。** 1.12.2 の mod 本体は Java 8 バイトコードですが、その toolchain は Gradle が自前で用意するので、手元に必要なのは 17 だけです。
 
-両方とも **手書きの `build.gradle`**(各 80 行程度)で、読み方は同じです。
-1.12.2 は RetroFuturaGradle 1.4.9 を直接 apply しています。
+両方とも **手書きの `build.gradle`**(各 80 行程度)で、読み方は同じです。1.12.2 は RetroFuturaGradle 1.4.9 を直接 apply しています。
 
-1.12.2 で唯一こみ入っているのは **refmap** です。mixin は `allowUserToConnect` のような MCP 名でターゲットを書いており、難読化されたサーバ上の SRG 名(`func_148542_a`)へ対応付けるのが refmap です。
-アノテーションプロセッサがこれを生成し、jar に同梱されます。**実行時に MixinBooter (10.6+) が mods フォルダに必要です**(`mcmod.info` と `@Mod(dependencies = ...)` の両方に記載済み)。
-1.20.1 は Forge が Mixin を同梱するので追加の依存はありません。
+1.12.2 で唯一こみ入っているのは **refmap** です。mixin は `allowUserToConnect` のような MCP 名でターゲットを書いており、難読化されたサーバ上の SRG 名(`func_148542_a`)へ対応付けるのが refmap です。アノテーションプロセッサがこれを生成し、jar に同梱されます。**実行時に MixinBooter (10.6+) が mods フォルダに必要です**(`mcmod.info` と `@Mod(dependencies = ...)` の両方に記載済み)。1.20.1 は Forge が Mixin を同梱するので追加の依存はありません。
 
-mod の識別情報(id / 名前 / バージョン / 作者)は**ルートの `gradle.properties` が唯一の出所**です。`mcmod.info` と `mods.toml` へは `processResources` で展開され、1.12.2 の `Tags` クラスはRetroFuturaGradle が生成します。`modVersion` を 1 行変えれば jar 名まで全部追従します。
+mod の識別情報(id / 名前 / バージョン / 作者)は**ルートの `gradle.properties` が唯一の出所**です。`mcmod.info` と `mods.toml` へは `processResources` で展開され、1.12.2 の `Tags` クラスは RetroFuturaGradle が生成します。`modVersion` を 1 行変えれば jar 名まで全部追従します。
 
-CI は 2 つです。`build` がルートから `./gradlew build` で両方を建て `check_common` が `common/` の制約を検査します([common/README.md](common/README.md) 参照)。リリースは GitHub の Actions タブから `Publish Project` を実行します。バージョン(`X.Y.Z`)を入力すると`gradle.properties` の `modVersion` 書き換え・コミット・タグ付け・ビルド・リリース作成まで走るので、手元でタグを打つ必要はありません。
+CI は 2 つです。`build` がルートから `./gradlew build` で両方を建て、`check_common` が `common/` の制約を検査します([common/README.md](common/README.md) 参照)。リリースは GitHub の Actions タブから `Publish Project` を実行します。バージョン(`X.Y.Z`)を入力すると、`gradle.properties` の `modVersion` 書き換え・コミット・タグ付け・ビルド・リリース作成まで走るので、手元でタグを打つ必要はありません。
 
 **git タグだけが `vX.Y.Z`** で、`modVersion` には `release_type` が付きます。つまり version=`1.0.0` / release_type=`beta` なら、タグは `v1.0.0`、`modVersion` は `1.0.0-beta` となり、jar 名・`mcmod.info`・`mods.toml` の version もすべて `1.0.0-beta` になります。`release` 以外は GitHub 上で pre-release として公開されます。
 
@@ -143,12 +138,9 @@ CI は 2 つです。`build` がルートから `./gradlew build` で両方を�
 
 ## 4. Mixin config の登録方法(1.12.2)
 
-`OpLimitCoreMod` は `IFMLLoadingPlugin` と **`IEarlyMixinLoader`** の両方を実装しています(`ILateMixinLoader` ではありません)。late の時点ではバニラのクラスがほぼロード済みで `PlayerList` を狙う config は弾かれるためです。ASM トランスフォーマーは登録しておらず、コアmodは config を渡すためだけの器です。
+`OpLimitCoreMod` は `IFMLLoadingPlugin` と **`IEarlyMixinLoader`** の両方を実装しています(`ILateMixinLoader` ではありません)。late の時点ではバニラのクラスがほぼロード済みで、`PlayerList` を狙う config は弾かれるためです。ASM トランスフォーマーは登録しておらず、コア mod は config を渡すためだけの器です。
 
-> ビルド対象は MixinBooter 10.7 です。11.0 以降では `IEarlyMixinLoader` / `ILateMixinLoader` が
-> どちらも `@Deprecated` になり、`MixinConfigs` マニフェスト属性か `IMixinConnector` が推奨です。
-> 11 系に上げる場合は、難読化プロセッサが `com.cleanroommc:cleanmix` に分離されているため、
-> それを `annotationProcessor` に足さないと refmap が生成されません。
+> ビルド対象は MixinBooter 10.7 です。11.0 以降では `IEarlyMixinLoader` / `ILateMixinLoader` がどちらも `@Deprecated` になり、`MixinConfigs` マニフェスト属性か `IMixinConnector` が推奨です。11 系に上げる場合は、難読化プロセッサが `com.cleanroommc:cleanmix` に分離されているため、それを `annotationProcessor` に足さないと refmap が生成されません。
 
 ---
 
