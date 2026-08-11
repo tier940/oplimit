@@ -12,20 +12,19 @@ on:
         description: 'Mod version (e.g. 1.0.0)'
         required: true
       release_type:
-        description: 'Release type'
+        description: 'Release type. Only decides whether the GitHub release is marked pre-release; the version and tag stay X.Y.Z either way.'
         type: choice
-        default: 'release'
+        default: 'beta'
         options:
-          - 'release'
           - 'beta'
           - 'alpha'
-      prerelease:
-        description: 'Mark the GitHub release as a pre-release'
-        type: boolean
-        default: false
+          - 'release'
 
 env:
-  FULL_VERSION: "${{ github.event.inputs.release_type == 'release' && github.event.inputs.version || format('{0}-{1}', github.event.inputs.version, github.event.inputs.release_type) }}"
+  # The tag and modVersion are always plain X.Y.Z; release_type never enters the version itself.
+  # It only appears in the released jar filenames (see the Collect jars step).
+  FULL_VERSION: "${{ github.event.inputs.version }}"
+  RELEASE_SUFFIX: "${{ github.event.inputs.version }}-${{ github.event.inputs.release_type }}"
 
 concurrency:
   group: publish-${{ github.ref }}
@@ -46,8 +45,13 @@ jobs:
           ref: ${{ github.ref }}
           fetch-tags: true
 
-      - name: Check if tag already exists
+      - name: Validate version and check the tag is free
         run: |
+          set -euo pipefail
+          if ! printf '%s' "$FULL_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "Version must be X.Y.Z, got '${FULL_VERSION}'." >&2
+              exit 1
+          fi
           if git rev-parse --verify --quiet "refs/tags/v${FULL_VERSION}"; then
               echo "Tag v${FULL_VERSION} already exists, aborting." >&2
               exit 1
@@ -85,8 +89,9 @@ jobs:
       - name: Build Project
         run: ./gradlew --info --stacktrace build
 
-      # Both subprojects produce oplimitbypass-<version>.jar, so the Minecraft version has to go
-      # into the released filename. The -dev jar is deobfuscated and deliberately not published.
+      # Both subprojects produce oplimitbypass-<version>.jar, so the Minecraft version and the
+      # release type both go into the released filename. The -dev jar is deobfuscated and
+      # deliberately not published.
       - name: Collect jars
         run: |
           set -euo pipefail
@@ -94,7 +99,7 @@ jobs:
           for mc in 1.12.2 1.20.1; do
               src="${mc}/build/libs/oplimitbypass-${FULL_VERSION}.jar"
               test -f "$src"
-              cp "$src" "release/oplimitbypass-${mc}-${FULL_VERSION}.jar"
+              cp "$src" "release/oplimitbypass-${mc}-${RELEASE_SUFFIX}.jar"
           done
           ls -l release
 
@@ -103,21 +108,20 @@ jobs:
       - name: Verify both jars carry their refmap
         run: |
           set -euo pipefail
-          unzip -p "release/oplimitbypass-1.12.2-${FULL_VERSION}.jar" mixins.oplimitbypass.refmap.json | grep -q func_
-          unzip -p "release/oplimitbypass-1.20.1-${FULL_VERSION}.jar" oplimitbypass.refmap.json | grep -q m_
+          unzip -p "release/oplimitbypass-1.12.2-${RELEASE_SUFFIX}.jar" mixins.oplimitbypass.refmap.json | grep -q func_
+          unzip -p "release/oplimitbypass-1.20.1-${RELEASE_SUFFIX}.jar" oplimitbypass.refmap.json | grep -q m_
           echo "refmap OK for both"
 
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PRERELEASE: ${{ github.event.inputs.prerelease }}
           RELEASE_TYPE: ${{ github.event.inputs.release_type }}
         run: |
           set -euo pipefail
-          # The tag was pushed by the commit step above; --target keeps the release pinned to it
-          # rather than to whatever the runner happens to have checked out.
-          args=(--title "OpLimitBypass ${FULL_VERSION}" --generate-notes --target "v${FULL_VERSION}")
-          if [ "$PRERELEASE" = true ] || [ "$RELEASE_TYPE" != release ]; then
+          # The tag was pushed by the commit step above, and gh resolves the release to it by name.
+          # Do not pass --target: it takes a branch or commit SHA, never a tag.
+          args=(--title "OpLimitBypass ${FULL_VERSION}" --generate-notes)
+          if [ "$RELEASE_TYPE" != release ]; then
               args+=(--prerelease)
           fi
           gh release create "v${FULL_VERSION}" release/*.jar "${args[@]}"
