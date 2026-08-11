@@ -16,6 +16,8 @@ java {
 
 // Code shared verbatim with the 1.12.2 build. See ../common/README.md.
 sourceSets.main.java.srcDir '../common/src/main/java'
+// Lang files live with the shared code so the two builds cannot drift apart.
+sourceSets.main.resources.srcDir '../common/src/main/resources'
 
 minecraft {
     mappings channel: 'official', version: '1.20.1'
@@ -56,7 +58,7 @@ repositories {
 }
 
 dependencies {
-    minecraft 'net.minecraftforge:forge:1.20.1-47.4.22'
+    minecraft 'net.minecraftforge:forge:1.20.1-47.4.10'
 
     // Forge ships Mixin at runtime but not its annotation processor, and MixinGradle does not add
     // one either. Without it no refmap is generated, even though oplimitbypass.mixins.json declares

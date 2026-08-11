@@ -17,6 +17,29 @@ java {
 
 // Code shared verbatim with the 1.20.1 build. See ../common/README.md.
 sourceSets.main.java.srcDir '../common/src/main/java'
+// Lang files live with the shared code so the two builds cannot drift apart. 1.12.2 clients read
+// the key=value .lang format (JSON arrived in 1.13), so they are converted rather than copied.
+def langSource = file('../common/src/main/resources/assets/oplimitbypass/lang')
+def langOutput = layout.buildDirectory.dir('generated/lang')
+
+def generateLang = tasks.register('generateLang') {
+    inputs.dir langSource
+    outputs.dir langOutput
+    doLast {
+        def target = langOutput.get().dir('assets/oplimitbypass/lang').asFile
+        target.mkdirs()
+        langSource.listFiles({ f -> f.name.endsWith('.json') } as FileFilter).each { json ->
+            def entries = new groovy.json.JsonSlurper().parse(json, 'UTF-8')
+            def out = new File(target, json.name.replace('.json', '.lang'))
+            out.withWriter('UTF-8') { w ->
+                w.writeLine "# Generated from common/src/main/resources/assets/oplimitbypass/lang/${json.name}"
+                entries.each { k, v -> w.writeLine "${k}=${v}" }
+            }
+        }
+    }
+}
+
+sourceSets.main.resources.srcDir generateLang
 
 ext.mcVersion = '1.12.2'
 
@@ -75,11 +98,11 @@ dependencies {
     annotationProcessor 'com.google.guava:guava:33.6.0-jre'
     annotationProcessor 'com.google.code.gson:gson:2.14.0'
 
-    api('zone.rong:mixinbooter:11.13') { transitive = false }
-    // MixinBooter 11 keeps the mixin obfuscation processor in cleanmix. Without it on the annotation
-    // processor path javac silently runs no processor at all, no refmap is written, and the mixins
-    // fail to apply against an obfuscated server.
-    annotationProcessor('com.cleanroommc:cleanmix:0.7.1') { transitive = false }
+    // 10.x bundles the mixin obfuscation processor itself, so the same artifact serves as the
+    // annotation processor. (11.x moved it out into com.cleanroommc:cleanmix; if this is ever
+    // bumped to 11, that has to go on the annotationProcessor path or no refmap is written.)
+    api('zone.rong:mixinbooter:10.7') { transitive = false }
+    annotationProcessor('zone.rong:mixinbooter:10.7') { transitive = false }
 
     compileOnlyApi 'org.jetbrains:annotations:26.1.0'
     annotationProcessor 'org.jetbrains:annotations:26.1.0'

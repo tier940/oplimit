@@ -6,7 +6,8 @@
   "compatibilityLevel": "JAVA_8",
   "mixins": [
     "AccessorPlayerList",
-    "MixinPlayerListLimit"
+    "MixinPlayerListLimit",
+    "MixinServerStatusMotd"
   ],
   "client": [],
   "server": []

@@ -21,6 +21,12 @@ CI でも `common/**` の変更時に同じスクリプトが走ります(`.gith
 共有コードが MC バージョンから必要とするのは「オンラインプレイヤーから `GameProfile` をどう取るか」だけです。
 `OpBypassRegistry.ProfileReader` として、各バージョンの `OpBypassCounter.PROFILE_READER` がサーバ起動時の `init()` で 1 度だけ渡します。以降 mixin もコマンドも `OpBypassRegistry` を直接呼べます。
 
+## 翻訳
+
+`src/main/resources/assets/oplimitbypass/lang/*.json` が翻訳の原本です。1.20.1 はこれをそのまま同梱し、1.12.2 は `.lang`(key=value)形式に変換して同梱します(1.12.2 のクライアントは JSON を読めないため)。変換はビルド時の `generateLang` タスクが行うので、編集するのは JSON だけです。
+
+`OpLimitLang` はサーバ側で両形式を読めるので、どちらの jar でも同じ文字列が出ます。
+
 ## 唯一の非自明な回避策
 
 Gson 2.8 には静的な `JsonParser.parseReader` が無く、2.10 では非推奨のインスタンスメソッドが残ります。

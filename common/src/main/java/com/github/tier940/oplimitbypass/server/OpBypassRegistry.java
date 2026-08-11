@@ -16,6 +16,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -58,6 +59,7 @@ public final class OpBypassRegistry {
     private static final String KEY_UUID = "uuid";
     private static final String KEY_NAME = "name";
     private static final String OPS_FILE_NAME = "ops.json";
+    private static final String MAINTENANCE_FILE_NAME = "oplimit-maintenance.json";
 
     public static final Logger LOGGER = LogManager.getLogger("OpLimitBypass");
 
@@ -69,6 +71,23 @@ public final class OpBypassRegistry {
     private static volatile boolean active = false;
     private static volatile File opsFile = null;
     private static volatile ProfileReader profileReader = null;
+
+    /** Maintenance mode is in-memory only: a restart always comes back with it off. */
+    private static volatile boolean maintenance = false;
+    private static volatile int savedMaxPlayers = -1;
+    private static volatile String savedMotd = null;
+    private static volatile File maintenanceFile = null;
+
+    /**
+     * Same shape as ops.json: uuid takes priority, name is the offline-mode fallback.
+     *
+     * <p>
+     * A player who has never connected has no known UUID, and ConcurrentHashMap forbids null
+     * values, so the name set is kept separate from the uuid set rather than mapping one to the
+     * other.
+     */
+    private static final Set<UUID> MAINTENANCE_UUIDS = ConcurrentHashMap.newKeySet();
+    private static final Set<String> MAINTENANCE_NAMES = ConcurrentHashMap.newKeySet();
 
     private OpBypassRegistry() {}
 
@@ -100,16 +119,25 @@ public final class OpBypassRegistry {
      */
     public static void init(@NotNull File serverRoot, @NotNull ProfileReader reader) {
         opsFile = new File(serverRoot, OPS_FILE_NAME);
+        maintenanceFile = new File(serverRoot, MAINTENANCE_FILE_NAME);
         profileReader = reader;
         active = true;
         int count = reload();
         LOGGER.info("Watching {} ({} operator(s) bypassing the player limit)", opsFile.getAbsolutePath(), count);
+        int listed = reloadMaintenance();
+        LOGGER.info("Maintenance list: {} entry/entries in {}", listed, maintenanceFile.getAbsolutePath());
     }
 
     public static void shutdown() {
         active = false;
         opsFile = null;
         profileReader = null;
+        maintenance = false;
+        savedMaxPlayers = -1;
+        savedMotd = null;
+        maintenanceFile = null;
+        MAINTENANCE_UUIDS.clear();
+        MAINTENANCE_NAMES.clear();
         BY_UUID.clear();
         BY_NAME.clear();
     }
@@ -127,9 +155,14 @@ public final class OpBypassRegistry {
      * @return the number of online players that consume a slot.
      */
     public static int countTowardsLimit(@NotNull List<?> players, @Nullable GameProfile joining) {
-        if (active && joining != null && isBypassing(joining.getId(), joining.getName())) {
-            // Never full for a bypassing operator, whatever max-players happens to be.
-            return Integer.MIN_VALUE;
+        if (active && joining != null) {
+            // Never full for anyone allowed past the limit, whatever max-players happens to be.
+            // During maintenance max-players is 0, so everyone else is rejected by the plain
+            // vanilla comparison without needing a branch here.
+            if (maintenance ? isAllowedDuringMaintenance(joining.getId(), joining.getName())
+                    : isBypassing(joining.getId(), joining.getName())) {
+                return Integer.MIN_VALUE;
+            }
         }
         return countNonBypassing(players);
     }
@@ -148,7 +181,7 @@ public final class OpBypassRegistry {
             int count = 0;
             for (Object player : players) {
                 GameProfile profile = reader.profileOf(player);
-                if (profile != null && isBypassing(profile.getId(), profile.getName())) {
+                if (profile != null && !occupiesSlot(profile)) {
                     continue;
                 }
                 count++;
@@ -158,6 +191,21 @@ public final class OpBypassRegistry {
             LOGGER.error("Player limit check failed, falling back to the vanilla count", e);
             return players.size();
         }
+    }
+
+    /**
+     * Whether an online player counts against max-players.
+     *
+     * <p>
+     * Both the limit check and the reported figure go through this, so the two can never disagree.
+     * During maintenance everyone still allowed in is invisible to the counter, which is what makes
+     * the server advertise "0/0" rather than "1/0" once someone reconnects.
+     */
+    private static boolean occupiesSlot(@NotNull GameProfile profile) {
+        if (maintenance) {
+            return !isAllowedDuringMaintenance(profile.getId(), profile.getName());
+        }
+        return !isBypassing(profile.getId(), profile.getName());
     }
 
     public static int countBypassingOnline(@NotNull List<?> players) {
@@ -173,6 +221,187 @@ public final class OpBypassRegistry {
             }
         }
         return count;
+    }
+
+    // --------------------------------------------------------------------------------- maintenance
+
+    /**
+     * Whether maintenance mode is on. Only held in memory, so a restart always comes back with it off.
+     */
+    public static boolean isMaintenance() {
+        return maintenance;
+    }
+
+    /**
+     * @return the max-players value saved when maintenance was enabled, or -1 when it is off.
+     */
+    public static int getSavedMaxPlayers() {
+        return savedMaxPlayers;
+    }
+
+    /** Records that maintenance is starting and remembers what to restore later. */
+    public static void beginMaintenance(int currentMaxPlayers, @Nullable String currentMotd) {
+        savedMaxPlayers = currentMaxPlayers;
+        savedMotd = currentMotd;
+        maintenance = true;
+    }
+
+    /**
+     * @return the MOTD saved when maintenance began, or null when it was not on. Reading it clears
+     *         it, since it is only ever needed once to restore the server description.
+     */
+    @Nullable
+    public static String takeSavedMotd() {
+        String motd = savedMotd;
+        savedMotd = null;
+        return motd;
+    }
+
+    /**
+     * Ends maintenance.
+     *
+     * @return the max-players value to restore, or -1 when maintenance was not on.
+     */
+    public static int endMaintenance() {
+        if (!maintenance) {
+            return -1;
+        }
+        int restore = savedMaxPlayers;
+        maintenance = false;
+        savedMaxPlayers = -1;
+        // savedMotd is cleared by the caller after it has restored it.
+        return restore;
+    }
+
+    /** Bypassing operators keep their access during maintenance, as does anyone on the list. */
+    public static boolean isAllowedDuringMaintenance(@Nullable UUID uuid, @Nullable String name) {
+        if (isBypassing(uuid, name)) {
+            return true;
+        }
+        if (uuid != null && MAINTENANCE_UUIDS.contains(uuid)) {
+            return true;
+        }
+        return name != null && MAINTENANCE_NAMES.contains(name.toLowerCase(Locale.ROOT));
+    }
+
+    /**
+     * Adds a player to the maintenance list and writes it to disk.
+     *
+     * @param uuid may be null for a player who has never been seen on this server.
+     * @return false when the name was already listed.
+     */
+    public static synchronized boolean addMaintenanceName(@NotNull String name, @Nullable UUID uuid) {
+        if (!MAINTENANCE_NAMES.add(name.toLowerCase(Locale.ROOT))) {
+            return false;
+        }
+        if (uuid != null) {
+            MAINTENANCE_UUIDS.add(uuid);
+        }
+        writeMaintenance(name, uuid, true);
+        return true;
+    }
+
+    /**
+     * Fills in the UUID of a listed player once it becomes known.
+     *
+     * <p>
+     * A player can be listed before the server has ever seen them, in which case only the name is
+     * recorded. Calling this when they connect upgrades the entry so the listing survives a rename.
+     */
+    public static synchronized void rememberMaintenanceUuid(@NotNull String name, @NotNull UUID uuid) {
+        if (!MAINTENANCE_NAMES.contains(name.toLowerCase(Locale.ROOT)) || !MAINTENANCE_UUIDS.add(uuid)) {
+            return;
+        }
+        writeMaintenance(name, uuid, true);
+    }
+
+    /** @return false when the name was not on the list. */
+    public static synchronized boolean removeMaintenanceName(@NotNull String name) {
+        if (!MAINTENANCE_NAMES.remove(name.toLowerCase(Locale.ROOT))) {
+            return false;
+        }
+        writeMaintenance(name, null, false);
+        // The uuid set is rebuilt from the file, which no longer holds this entry.
+        reloadMaintenance();
+        return true;
+    }
+
+    /**
+     * Re-reads the maintenance list from disk, creating an empty file when there is none.
+     *
+     * @return the number of entries loaded.
+     */
+    public static synchronized int reloadMaintenance() {
+        MAINTENANCE_UUIDS.clear();
+        MAINTENANCE_NAMES.clear();
+        File file = maintenanceFile;
+        if (file == null) {
+            return 0;
+        }
+        if (!file.isFile()) {
+            // Start the server with the file already in place, the way vanilla does for ops.json.
+            writeMaintenanceFile(new JsonArray());
+            return 0;
+        }
+        JsonArray entries = readJsonArray(file);
+        if (entries == null) {
+            return 0;
+        }
+        for (JsonElement element : entries) {
+            if (!element.isJsonObject()) {
+                continue;
+            }
+            String name = readString(element, KEY_NAME);
+            if (name == null) {
+                continue;
+            }
+            UUID uuid = readUuid(element.getAsJsonObject());
+            MAINTENANCE_NAMES.add(name.toLowerCase(Locale.ROOT));
+            if (uuid != null) {
+                MAINTENANCE_UUIDS.add(uuid);
+            }
+        }
+        return MAINTENANCE_NAMES.size();
+    }
+
+    /** Rewrites the maintenance file with one entry added or removed. */
+    private static void writeMaintenance(@NotNull String name, @Nullable UUID uuid, boolean add) {
+        File file = maintenanceFile;
+        if (file == null) {
+            return;
+        }
+        JsonArray entries = file.isFile() ? readJsonArray(file) : new JsonArray();
+        if (entries == null) {
+            return;
+        }
+        JsonArray kept = new JsonArray();
+        for (JsonElement element : entries) {
+            String existing = readString(element, KEY_NAME);
+            if (existing == null || !existing.equalsIgnoreCase(name)) {
+                kept.add(element);
+            }
+        }
+        if (add) {
+            JsonObject entry = new JsonObject();
+            entry.addProperty(KEY_UUID, uuid == null ? "" : uuid.toString());
+            entry.addProperty(KEY_NAME, name);
+            kept.add(entry);
+        }
+        writeMaintenanceFile(kept);
+    }
+
+    private static void writeMaintenanceFile(@NotNull JsonArray entries) {
+        File file = maintenanceFile;
+        if (file != null) {
+            writeJsonArray(file, entries);
+        }
+    }
+
+    @NotNull
+    public static List<String> listMaintenanceNames() {
+        List<String> names = new ArrayList<>(MAINTENANCE_NAMES);
+        Collections.sort(names);
+        return names;
     }
 
     /** UUID takes priority; the name is only consulted for offline-mode setups. */
@@ -308,6 +537,12 @@ public final class OpBypassRegistry {
         if (file == null || !file.isFile()) {
             return new JsonArray();
         }
+        return readJsonArray(file);
+    }
+
+    /** @return the array, or null when the file exists but could not be read. */
+    @Nullable
+    private static JsonArray readJsonArray(@NotNull File file) {
         try (Reader reader = new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8)) {
             JsonElement root = parseJson(reader);
             return root != null && root.isJsonArray() ? root.getAsJsonArray() : new JsonArray();
@@ -323,7 +558,7 @@ public final class OpBypassRegistry {
      * instance form is the only spelling that compiles clean on both.
      */
     @SuppressWarnings("deprecation")
-    private static JsonElement parseJson(@NotNull Reader reader) {
+    static JsonElement parseJson(@NotNull Reader reader) {
         return new JsonParser().parse(reader);
     }
 
@@ -337,9 +572,10 @@ public final class OpBypassRegistry {
      */
     private static boolean writeOps(@NotNull JsonArray entries) {
         File file = opsFile;
-        if (file == null) {
-            return false;
-        }
+        return file != null && writeJsonArray(file, entries);
+    }
+
+    private static boolean writeJsonArray(@NotNull File file, @NotNull JsonArray entries) {
         File temp = new File(file.getParentFile(), file.getName() + ".tmp");
         try {
             try (Writer writer = new OutputStreamWriter(new FileOutputStream(temp), StandardCharsets.UTF_8)) {

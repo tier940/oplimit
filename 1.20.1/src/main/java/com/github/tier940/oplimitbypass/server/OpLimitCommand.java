@@ -27,11 +27,16 @@ public final class OpLimitCommand {
     private static final SuggestionProvider<CommandSourceStack> OPERATORS =
             (context, builder) -> SharedSuggestionProvider.suggest(OpBypassRegistry.listOperators(), builder);
 
+    private static final SuggestionProvider<CommandSourceStack> MAINTENANCE_NAMES =
+            (context, builder) -> SharedSuggestionProvider.suggest(OpBypassRegistry.listMaintenanceNames(), builder);
+
     private OpLimitCommand() {}
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("oplimit")
                 .requires(source -> source.hasPermission(4))
+                // Bare /oplimit reports status instead of a usage error.
+                .executes(OpLimitCommand::status)
                 .then(Commands.literal("status").executes(OpLimitCommand::status))
                 .then(Commands.literal("reload").executes(OpLimitCommand::reload))
                 .then(Commands.literal("list").executes(OpLimitCommand::list))
@@ -43,12 +48,22 @@ public final class OpLimitCommand {
                                         .executes(OpLimitCommand::setBypass))))
                 .then(Commands.literal("max")
                         .executes(OpLimitCommand::queryMax)
-                        .then(Commands.argument("value", IntegerArgumentType.integer(1, MAX_PLAYER_CAP))
-                                .executes(OpLimitCommand::setMax))));
-
-        dispatcher.register(Commands.literal("oplb")
-                .requires(source -> source.hasPermission(4))
-                .redirect(dispatcher.getRoot().getChild("oplimit")));
+                        // 0 is allowed: it is how you close the server to everyone but the
+                        // operators who bypass the limit.
+                        .then(Commands.argument("value", IntegerArgumentType.integer(0, MAX_PLAYER_CAP))
+                                .executes(OpLimitCommand::setMax)))
+                .then(Commands.literal("maintenance")
+                        .executes(OpLimitCommand::queryMaintenance)
+                        .then(Commands.literal("on").executes(OpLimitCommand::maintenanceOn))
+                        .then(Commands.literal("off").executes(OpLimitCommand::maintenanceOff))
+                        .then(Commands.literal("list").executes(OpLimitCommand::maintenanceList))
+                        .then(Commands.literal("add")
+                                .then(Commands.argument("player", StringArgumentType.word())
+                                        .executes(OpLimitCommand::maintenanceAdd)))
+                        .then(Commands.literal("remove")
+                                .then(Commands.argument("player", StringArgumentType.word())
+                                        .suggests(MAINTENANCE_NAMES)
+                                        .executes(OpLimitCommand::maintenanceRemove)))));
     }
 
     private static int status(CommandContext<CommandSourceStack> context) {
@@ -57,31 +72,35 @@ public final class OpLimitCommand {
         int max = playerList.getMaxPlayers();
         int bypassing = OpBypassRegistry.countBypassingOnline(players);
         int counted = OpBypassRegistry.countNonBypassing(players);
-        return info(context, String.format("max-players %d, online %d (%d counted + %d bypassing), %d slot(s) free",
-                max, players.size(), counted, bypassing, Math.max(0, max - counted)));
+        info(context, "oplimit.status", max, players.size(), counted, bypassing, Math.max(0, max - counted));
+        if (OpBypassRegistry.isMaintenance()) {
+            return info(context, "oplimit.status.maintenance", OpBypassRegistry.getSavedMaxPlayers());
+        }
+        return 1;
     }
 
     private static int reload(CommandContext<CommandSourceStack> context) {
         int count = OpBypassRegistry.reload();
+        OpBypassRegistry.reloadMaintenance();
         OpBypassCounter.reloadVanillaOps(context.getSource().getServer());
-        return info(context, "Reloaded ops.json, " + count + " operator(s) bypass the player limit.");
+        return info(context, "oplimit.reload", count);
     }
 
     private static int list(CommandContext<CommandSourceStack> context) {
         List<String> names = OpBypassRegistry.listBypassing();
         if (names.isEmpty()) {
-            return info(context, "No operator currently bypasses the player limit.");
+            return info(context, "oplimit.list.empty");
         }
-        return info(context, "Bypassing the player limit (" + names.size() + "): " + String.join(", ", names));
+        return info(context, "oplimit.list", names.size(), String.join(", ", names));
     }
 
     private static int queryBypass(CommandContext<CommandSourceStack> context) {
         String name = StringArgumentType.getString(context, "player");
         Boolean state = OpBypassRegistry.getState(name);
         if (state == null) {
-            return info(context, name + " has no ops.json entry, so the flag is unset (false).");
+            return info(context, "oplimit.bypass.unset", name);
         }
-        return info(context, name + ": bypassesPlayerLimit = " + state);
+        return info(context, "oplimit.bypass.state", name, state);
     }
 
     private static int setBypass(CommandContext<CommandSourceStack> context) {
@@ -91,20 +110,19 @@ public final class OpLimitCommand {
 
         switch (OpBypassRegistry.setBypass(name, value)) {
             case NOT_OP:
-                return error(context, name + " is not in ops.json. Run /op " + name + " first.");
+                return error(context, "oplimit.bypass.not_op", name, name);
             case IO_ERROR:
-                return error(context, "Could not update ops.json, see the server log.");
+                return error(context, "oplimit.bypass.io_error");
             case OK:
             default:
                 OpBypassCounter.reloadVanillaOps(server);
-                return info(context, "Set bypassesPlayerLimit = " + value + " for " + name
-                        + ". Applied immediately.");
+                return info(context, "oplimit.bypass.set", value, name);
         }
     }
 
     private static int queryMax(CommandContext<CommandSourceStack> context) {
-        return info(context, "max-players is currently "
-                + context.getSource().getServer().getPlayerList().getMaxPlayers() + ".");
+        return info(context, "oplimit.max.current",
+                context.getSource().getServer().getPlayerList().getMaxPlayers());
     }
 
     private static int setMax(CommandContext<CommandSourceStack> context) {
@@ -112,17 +130,102 @@ public final class OpLimitCommand {
         PlayerList playerList = context.getSource().getServer().getPlayerList();
         int current = playerList.getMaxPlayers();
         OpBypassCounter.setMaxPlayers(playerList, value);
-        info(context, "max-players changed from " + current + " to " + playerList.getMaxPlayers() + ".");
-        return info(context, "This is in-memory only. Update server.properties to make it permanent.");
+        info(context, "oplimit.max.changed", current, playerList.getMaxPlayers());
+        return info(context, "oplimit.max.not_persisted");
     }
 
-    private static int info(CommandContext<CommandSourceStack> context, String message) {
-        context.getSource().sendSuccess(() -> Component.literal("[OpLimit] " + message), true);
+    // --------------------------------------------------------------------------------- maintenance
+
+    private static int queryMaintenance(CommandContext<CommandSourceStack> context) {
+        if (!OpBypassRegistry.isMaintenance()) {
+            return info(context, "oplimit.maintenance.off");
+        }
+        return info(context, "oplimit.maintenance.on_status", OpBypassRegistry.getSavedMaxPlayers());
+    }
+
+    private static int maintenanceOn(CommandContext<CommandSourceStack> context) {
+        if (OpBypassRegistry.isMaintenance()) {
+            return error(context, "oplimit.maintenance.already_on");
+        }
+        MinecraftServer server = context.getSource().getServer();
+        PlayerList playerList = server.getPlayerList();
+        OpBypassRegistry.beginMaintenance(playerList.getMaxPlayers(), OpBypassCounter.getMotd(server));
+        OpBypassCounter.setMaxPlayers(playerList, 0);
+        OpBypassCounter.setMotd(server, OpLimitLang.translate("oplimit.motd.maintenance"));
+        int kicked = OpBypassCounter.kickDisallowed(playerList, OpLimitLang.translate("oplimit.disconnect.maintenance"));
+        info(context, "oplimit.maintenance.enabled", kicked);
+        return info(context, "oplimit.maintenance.enabled.hint");
+    }
+
+    private static int maintenanceOff(CommandContext<CommandSourceStack> context) {
+        int restore = OpBypassRegistry.endMaintenance();
+        if (restore < 0) {
+            return error(context, "oplimit.maintenance.not_on");
+        }
+        MinecraftServer server = context.getSource().getServer();
+        PlayerList playerList = server.getPlayerList();
+        OpBypassCounter.setMaxPlayers(playerList, restore);
+        String motd = OpBypassRegistry.takeSavedMotd();
+        if (motd != null) {
+            OpBypassCounter.setMotd(server, motd);
+        }
+        return info(context, "oplimit.maintenance.disabled", restore);
+    }
+
+    private static int maintenanceList(CommandContext<CommandSourceStack> context) {
+        List<String> names = OpBypassRegistry.listMaintenanceNames();
+        if (names.isEmpty()) {
+            return info(context, "oplimit.maintenance.list.empty");
+        }
+        return info(context, "oplimit.maintenance.list", names.size(), String.join(", ", names));
+    }
+
+    private static int maintenanceAdd(CommandContext<CommandSourceStack> context) {
+        String name = StringArgumentType.getString(context, "player");
+        MinecraftServer server = context.getSource().getServer();
+        if (!OpBypassRegistry.addMaintenanceName(name, OpBypassCounter.uuidOf(server, name))) {
+            return error(context, "oplimit.maintenance.already_listed", name);
+        }
+        return info(context, "oplimit.maintenance.added", name);
+    }
+
+    private static int maintenanceRemove(CommandContext<CommandSourceStack> context) {
+        String name = StringArgumentType.getString(context, "player");
+        if (!OpBypassRegistry.removeMaintenanceName(name)) {
+            return error(context, "oplimit.maintenance.not_listed", name);
+        }
+        info(context, "oplimit.maintenance.removed", name);
+        if (!OpBypassRegistry.isMaintenance()) {
+            return 1;
+        }
+        // They are no longer allowed in, so evict them the same way enabling maintenance does.
+        // A bypassing operator stays: kickDisallowed is the single definition of "may be here".
+        PlayerList playerList = context.getSource().getServer().getPlayerList();
+        int kicked = OpBypassCounter.kickDisallowed(playerList, OpLimitLang.translate("oplimit.disconnect.maintenance"));
+        if (kicked > 0) {
+            return info(context, "oplimit.maintenance.kicked", kicked);
+        }
         return 1;
     }
 
-    private static int error(CommandContext<CommandSourceStack> context, String message) {
-        context.getSource().sendFailure(Component.literal("[OpLimit] " + message));
+    /**
+     * Sends a message as a translation key so a client that has this mod renders it in its own
+     * language, with the server-resolved text riding along as the fallback for the clients that do
+     * not (which is most of them: this mod is server-only).
+     */
+    private static Component message(String key, Object... args) {
+        return Component.literal("[OpLimit] ")
+                .append(Component.translatableWithFallback(key, OpLimitLang.translate(key, args), args));
+    }
+
+    private static int info(CommandContext<CommandSourceStack> context, String key, Object... args) {
+        Component text = message(key, args);
+        context.getSource().sendSuccess(() -> text, true);
+        return 1;
+    }
+
+    private static int error(CommandContext<CommandSourceStack> context, String key, Object... args) {
+        context.getSource().sendFailure(message(key, args));
         return 0;
     }
 }

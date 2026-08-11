@@ -6,7 +6,8 @@
   "refmap": "oplimitbypass.refmap.json",
   "mixins": [
     "AccessorPlayerList",
-    "MixinPlayerListLimit"
+    "MixinPlayerListLimit",
+    "MixinServerStatusPlayerCount"
   ],
   "client": [],
   "injectors": {
