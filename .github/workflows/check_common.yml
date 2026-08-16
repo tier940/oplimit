@@ -21,7 +21,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # --release 8 and --release 17 both work from a single modern JDK.
       - name: Set up JDK 17

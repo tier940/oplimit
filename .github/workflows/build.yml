@@ -18,7 +18,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # RetroFuturaGradle (1.12.2) and ForgeGradle (1.20.1) both run on Java 17. The Java 8
       # toolchain the 1.12.2 mod compiles against is provisioned by Gradle itself.
