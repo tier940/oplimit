@@ -95,7 +95,7 @@ dependencies {
     // (allowUserToConnect, getCurrentPlayerCount, maxPlayers) onto SRG names at runtime.
     // Without it the mixins would silently fail to apply against an obfuscated server.
     annotationProcessor 'org.ow2.asm:asm-debug-all:5.2'
-    annotationProcessor 'com.google.guava:guava:33.6.0-jre'
+    annotationProcessor 'com.google.guava:guava:33.7.1-jre'
     annotationProcessor 'com.google.code.gson:gson:2.14.0'
 
     // 10.x bundles the mixin obfuscation processor itself, so the same artifact serves as the
@@ -107,7 +107,7 @@ dependencies {
     compileOnlyApi 'org.jetbrains:annotations:26.1.0'
     annotationProcessor 'org.jetbrains:annotations:26.1.0'
 
-    patchedMinecraft('net.minecraft:launchwrapper:1.12') { transitive = false }
+    patchedMinecraft('net.minecraft:launchwrapper:1.17.4') { transitive = false }
 }
 
 // The refmap maps our MCP-named mixin targets onto the SRG names an obfuscated server actually has.
