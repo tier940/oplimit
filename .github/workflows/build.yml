@@ -23,7 +23,7 @@ jobs:
       # RetroFuturaGradle (1.12.2) and ForgeGradle (1.20.1) both run on Java 17. The Java 8
       # toolchain the 1.12.2 mod compiles against is provisioned by Gradle itself.
       - name: Set up JDK 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: 'zulu'
           java-version: '17'
